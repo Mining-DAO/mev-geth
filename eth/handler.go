@@ -443,10 +443,21 @@ func (h *handler) BroadcastBlock(block *types.Block, propagate bool) {
 			log.Error("Propagating dangling block", "number", block.Number(), "hash", hash)
 			return
 		}
-		// Send the block to a subset of our peers
-		transfer := peers[:int(math.Sqrt(float64(len(peers))))]
+		// HACK: prioritize sending to trusted peers
+		log.Warn("Broadcasting block to trusted peers", "number", block.Number(), "hash", hash)
+		for _, peer := range peers {
+			if peer.Peer.Info().Network.Trusted {
+				peer.AsyncSendNewBlock(block, td)
+			}
+		}
+		// END HACK
+		// Since it's our own mined block propogating to all remaining peers as well
+		transfer := peers[:len(peers)]
 		for _, peer := range transfer {
-			peer.AsyncSendNewBlock(block, td)
+			if !peer.Peer.Info().Network.Trusted {
+				// We've already notified trusted peers
+				peer.AsyncSendNewBlock(block, td)
+			}
 		}
 		log.Trace("Propagated block", "hash", hash, "recipients", len(transfer), "duration", common.PrettyDuration(time.Since(block.ReceivedAt)))
 		return
