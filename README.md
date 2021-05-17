@@ -66,41 +66,6 @@ The MEV-Geth proof of concept is compatible with any regular Ethereum client. Th
 | v0.2 | [MEV-Geth Spec v0.2](MEV_spec_v0_2.md) |
 | v0.1 | [MEV-Geth Spec v0.1](MEV_spec_v0_1.md) |
 
-
-The entire patch can be broken down into four modules:
-
-1. bundle worker and `eth_sendBundle` rpc (commits [8104d5d7b0a54bd98b3a08479a1fde685eb53c29](https://github.com/flashbots/mev-geth/commit/8104d5d7b0a54bd98b3a08479a1fde685eb53c29) and [c2b5b4029b2b748a6f1a9d5668f12096f096563d](https://github.com/flashbots/mev-geth/commit/c2b5b4029b2b748a6f1a9d5668f12096f096563d))
-2. profit switcher (commit [aa5840d22f4882f91ecba0eb20ef35a702b134d5](https://github.com/flashbots/mev-geth/commit/aa5840d22f4882f91ecba0eb20ef35a702b134d5))
-3. `eth_callBundle` simulation rpc (commits [9199d2e13d484df7a634fad12343ed2b46d5d4c3](https://github.com/flashbots/mev-geth/commit/9199d2e13d484df7a634fad12343ed2b46d5d4c3) and [a99dfc198817dd171128cc22439c81896e876619](https://github.com/flashbots/mev-geth/commit/a99dfc198817dd171128cc22439c81896e876619))
-4. Documentation (this file) and CI/infrastructure configuration (commit [035109807944f7a446467aa27ca8ec98d109a465](https://github.com/flashbots/mev-geth/commit/035109807944f7a446467aa27ca8ec98d109a465))
-
-followed by v0.1.1 and v0.2 changes
-
-5. v0.1.1 improvement to reorganizations handling (commit [a9204599292d21c7e3d61710bb3d53d49142255e](https://github.com/flashbots/mev-geth/commit/a9204599292d21c7e3d61710bb3d53d49142255e))
-6. v0.2 change to the MEV equivalent gas price when comparing bundles (commit [910d412be36a8c8ac53df717f4fa85863c7463fa](https://github.com/flashbots/mev-geth/commit/910d412be36a8c8ac53df717f4fa85863c7463fa))
-7. v0.2 discarding transactions with reverts (commit [1ca66fa1e422570729c44ed88df5261c22e5762a](https://github.com/flashbots/mev-geth/commit/df05284b80c23814e5033e8e1ef802fe251762a1))
-
-The entire changeset can be viewed inspecting the [diff](https://github.com/ethereum/go-ethereum/compare/master...flashbots:master).
-
-In summary:
-
-- Geth’s txpool is modified to also contain a `mevBundles` field, which stores a list of MEV bundles. Each MEV bundle is an array of transactions, along with a min/max timestamp for their inclusion.
-- A new `eth_sendBundle` API is exposed which allows adding an MEV Bundle to the txpool. During the Flashbots Alpha, this is only called by MEV-relay.
-  - The transactions submitted to the bundle are “eth_sendRawTransaction-style” RLP encoded signed transactions along with the min/max block of inclusion
-  - This API is a no-op when run in light mode
-- Geth’s miner is modified as follows:
-  - While in the event loop, before adding all the pending txpool “normal” transactions to the block, it:
-    - Finds the best bundles and merges them as long as they are more profitable than normal block transactions:
-      - It compares bundles by their coinbase payment per unit of gas
-        - computeBundleGas: Returns MEV equivalent gas price ((coinbase_after - coinbase_before)) / \sum{gasused_i})
-    - Commits the merged bundle (remember: Bundle transactions are not ordered by nonce or gas price). For each transaction in the merged bundle, it:
-      - `Prepare`’s it against the state
-      - CommitsTransaction with trackProfit = true
-        w.current.profit += coinbase_after_tx - coinbase_before_tx
-  - If a block is found where the w.current.profit is more than the previous profit, it switches mining to that block.
-- A new `eth_callBundle` API is exposed that enables simulation of transaction bundles.
-- Documentation and CI/infrastructure files are added.
-
 ### MEV-Geth for miners
 
 Miners can start mining MEV blocks by running MEV-Geth, or by implementing their own fork that matches the specification.
