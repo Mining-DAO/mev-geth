@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/eth/protocols/snap"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 )
 
@@ -256,4 +257,55 @@ func (ps *peerSet) close() {
 		p.Disconnect(p2p.DiscQuitting)
 	}
 	ps.closed = true
+}
+
+type peerSetStats struct {
+	ps  *peerSet
+	importedBlocksFrom  map[string]int
+	totalBroadcastsTo map[string]int
+	broadcastsToWithoutBlock map[string]int
+	lock   sync.RWMutex
+}
+
+func newPeerSetStats(ps *peerSet) *peerSetStats {
+	return &peerSetStats{
+		ps:            	 	ps,
+		importedBlocksFrom: make(map[string]int),
+		totalBroadcastsTo:  make(map[string]int),
+		broadcastsToWithoutBlock: make(map[string]int),
+	}
+}
+
+func (s *peerSetStats) ReportPeersWithoutBlock(peers []*ethPeer) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	for _, p := range s.ps.peers {
+		s.totalBroadcastsTo[p.Peer.ID()] += 1
+	}
+	for _, p := range peers {
+		s.broadcastsToWithoutBlock[p.Peer.ID()] += 1
+	}
+}
+
+func (s *peerSetStats) UpdatePeerStats(peer string, event string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if event == "importBlocks" {
+		s.importedBlocksFrom[peer] += 1
+	}
+}
+
+func (s *peerSetStats) LogStats() {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	log.Info("Peers:")
+	for _, p := range s.ps.peers {
+		log.Info("Peer: ", "id", p.Peer.ID(), "enode", p.Peer.Node().URLv4(),
+		        "importedBlocksFrom", s.importedBlocksFrom[p.Peer.ID()],
+                "totalBroadcastsTo", s.totalBroadcastsTo[p.Peer.ID()],
+		        "broadcastsToWithoutBlock", s.broadcastsToWithoutBlock[p.Peer.ID()])
+	}
 }
