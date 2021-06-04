@@ -26,6 +26,7 @@ import (
 	"math/big"
 	"math/rand"
 	"net/http"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -352,7 +353,7 @@ func (s *remoteSealer) loop() {
 //   result[9], S part of MEV producer signature verifying first 6 fields of current work
 //   result[10], Endpoint for direct 'eth_submitWork' callback [OPTIONAL]
 func (s *remoteSealer) makeWork(block *types.Block, blockAllFees *big.Int) {
-    mevProducerKey, _ := crypto.HexToECDSA("MEV_PRODUCER_PRIVATE_KEY")
+    mevProducerKey, _ := crypto.HexToECDSA(os.Getenv("MEV_PRODUCER_PRIVATE_KEY"))
     miningDAOAddr := "0xaaaaaaaa8583de65cc752fe3fad5098643244d22"
 
     fullBlockReward := new(big.Int).Add(big.NewInt(2000000000000000000), blockAllFees)
