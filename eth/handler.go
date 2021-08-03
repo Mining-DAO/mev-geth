@@ -108,6 +108,7 @@ type handler struct {
 	blockFetcher *fetcher.BlockFetcher
 	txFetcher    *fetcher.TxFetcher
 	peers        *peerSet
+	peersStats	 *peerSetStats
 
 	eventMux      *event.TypeMux
 	txsCh         chan core.NewTxsEvent
@@ -143,6 +144,7 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		txsyncCh:   make(chan *txsync),
 		quitSync:   make(chan struct{}),
 	}
+	h.peersStats = newPeerSetStats(h.peers)
 	if config.Sync == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the fast
 		// block is ahead, so fast sync was enabled for this node at a certain point.
@@ -219,7 +221,7 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		}
 		return n, err
 	}
-	h.blockFetcher = fetcher.NewBlockFetcher(false, nil, h.chain.GetBlockByHash, validator, h.BroadcastBlock, heighter, nil, inserter, h.removePeer)
+	h.blockFetcher = fetcher.NewBlockFetcher(false, nil, h.chain.GetBlockByHash, validator, h.BroadcastBlock, heighter, nil, inserter, h.removePeer, h.peersStats.UpdatePeerStats)
 
 	fetchTx := func(peer string, hashes []common.Hash) error {
 		p := h.peers.peer(peer)
@@ -438,6 +440,14 @@ func (h *handler) BroadcastBlock(block *types.Block, propagate bool) {
 	hash := block.Hash()
 	peers := h.peers.peersWithoutBlock(hash)
 
+	if propagate {
+		h.peersStats.ReportPeersWithoutBlock(peers)
+	}
+	// Print peers stats every 100 blocks
+	if block.NumberU64() % 100 == 0 {
+		h.peersStats.LogStats()
+	}
+
 	// If propagation is requested, send to a subset of the peer
 	if propagate {
 		// Calculate the TD of the block (it's not imported yet, so block.Td is not valid)
@@ -448,10 +458,21 @@ func (h *handler) BroadcastBlock(block *types.Block, propagate bool) {
 			log.Error("Propagating dangling block", "number", block.Number(), "hash", hash)
 			return
 		}
-		// Send the block to a subset of our peers
-		transfer := peers[:int(math.Sqrt(float64(len(peers))))]
+		// HACK: prioritize sending to trusted peers
+		log.Warn("Broadcasting block to trusted peers", "number", block.Number(), "hash", hash)
+		for _, peer := range peers {
+			if peer.Peer.Info().Network.Trusted {
+				peer.AsyncSendNewBlock(block, td)
+			}
+		}
+		// END HACK
+		// Since it's our own mined block propogating to all remaining peers as well
+		transfer := peers[:len(peers)]
 		for _, peer := range transfer {
-			peer.AsyncSendNewBlock(block, td)
+			if !peer.Peer.Info().Network.Trusted {
+				// We've already notified trusted peers
+				peer.AsyncSendNewBlock(block, td)
+			}
 		}
 		log.Trace("Propagated block", "hash", hash, "recipients", len(transfer), "duration", common.PrettyDuration(time.Since(block.ReceivedAt)))
 		return
