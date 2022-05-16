@@ -31,32 +31,39 @@ type API struct {
 	ethash *Ethash
 }
 
-// GetWork returns a work package for external miner.
+// makeWork creates a work package for mining DAO
 //
-// The work package consists of 3 strings:
-//   result[0] - 32 bytes hex encoded current block header pow-hash
-//   result[1] - 32 bytes hex encoded seed hash used for DAG
-//   result[2] - 32 bytes hex encoded boundary condition ("target"), 2^256/difficulty
-//   result[3] - hex encoded block number
-func (api *API) GetWork() ([4]string, error) {
+// The work package consists of 11 strings:
+//   result[0], 32 bytes hex encoded current block header pow-hash
+//   result[1], 32 bytes hex encoded seed hash used for DAG
+//   result[2], 32 bytes hex encoded boundary condition ("target"), 2^256/difficulty
+//   result[3], hex encoded block number
+//   result[4], hex encoded block payment suggested by MEV producer
+//   result[5], hex encoded public address of mining pool operator(only pool operator can submit payment claim)
+//   result[6], public ethereum address of MEV producer
+//   result[7], V part of MEV producer signature verifying first 6 fields of current work
+//   result[8], R part of MEV producer signature verifying first 6 fields of current work
+//   result[9], S part of MEV producer signature verifying first 6 fields of current work
+//   result[10], Endpoint for direct 'eth_submitWork' callback [OPTIONAL]
+func (api *API) GetWork() ([11]string, error) {
 	if api.ethash.remote == nil {
-		return [4]string{}, errors.New("not supported")
+		return [11]string{}, errors.New("not supported")
 	}
 
 	var (
-		workCh = make(chan [4]string, 1)
+		workCh = make(chan [11]string, 1)
 		errc   = make(chan error, 1)
 	)
 	select {
 	case api.ethash.remote.fetchWorkCh <- &sealWork{errc: errc, res: workCh}:
 	case <-api.ethash.remote.exitCh:
-		return [4]string{}, errEthashStopped
+		return [11]string{}, errEthashStopped
 	}
 	select {
 	case work := <-workCh:
 		return work, nil
 	case err := <-errc:
-		return [4]string{}, err
+		return [11]string{}, err
 	}
 }
 
